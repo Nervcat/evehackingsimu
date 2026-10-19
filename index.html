@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVE Hacking v9.4 - Stable</title>
+<style>
+:root{
+  --cyan:#55e6e0;--gold:#ffd166;--wall:#22313d;--empty:#e2e8f0;
+  --trap_tz:#55e6e0;--trap_vi:#d946ef;--trap_sq:#fb923c;
+  --wrench:#4ade80;--cracker:#facc15;--core:#f43f5e;
+  --hp:#ef4444;--heal:#4ade80;
+  --panel-bg:rgba(13,20,26,.9);
+}
+*{box-sizing:border-box}
+body{margin:0;padding:20px;background:radial-gradient(ellipse at center,#101c26,#05080a 80%);color:#dceaf2;font-family:Segoe UI,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+body.targeting { cursor: crosshair; }
+h1{font-size:clamp(20px,4vw,28px);margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;text-shadow:0 0 10px #55e6e055}
+.sub{color:#6e8b9e;margin:0 0 20px;font-size:14px;text-align:center}
+.panel{background:var(--panel-bg);border:1px solid #1b2e3c;border-radius:12px;padding:20px;box-shadow:0 12px 35px #0008; transition: border-color 0.3s;}
+
+/* 狀態列 */
+.top-bar{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:20px;margin-bottom:20px;border-bottom:1px solid #ffffff10;padding-bottom:16px;}
+.player-stats{display:flex;flex-direction:column;gap:8px;font-family:monospace;font-size:15px;font-weight:700;}
+.stat-row{display:flex;align-items:center;gap:8px;}
+.hp-text{color:var(--hp);min-width:60px;}
+.atk-text{color:var(--gold);min-width:60px;}
+.bar-bg{width:100px;height:8px;background:#222;border-radius:4px;overflow:hidden;box-shadow:inset 0 0 4px #000;}
+.bar-fill{height:100%;background:var(--hp);transition:width 0.3s ease; box-shadow: 0 0 8px var(--hp);}
+
+.tactical-items{display:flex;justify-content:center;gap:12px;}
+.btn{background:#18394a;border:1px solid #3c7086;color:#eafaff;padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:700;transition:.2s;font-family:inherit;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;}
+.btn:hover:not(:disabled){background:#24536a}
+.btn:disabled{opacity:0.3;cursor:not-allowed;border-color:#333;color:#666;background:transparent;box-shadow:none;}
+.item-btn{border-color:#555;color:#aaa;background:#1a1a1a;min-width:100px;}
+.item-btn.active{border-color:var(--cracker);color:var(--cracker);animation:pulse 1s infinite;box-shadow:0 0 10px var(--cracker);}
+.item-btn.avail-wrench{border-color:var(--wrench);color:var(--wrench);background:#14532d;box-shadow:0 0 8px #4ade8033;}
+.item-btn.avail-cracker{border-color:var(--cracker);color:var(--cracker);background:#422006;box-shadow:0 0 8px #facc1533;}
+
+.system-info{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+.status{color:var(--cyan);font-weight:700;font-family:monospace;font-size:13px;text-align:right;letter-spacing:1px;}
+.reset-btn{background:transparent;border:1px solid #555;color:#aaa;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;transition:.2s;}
+.reset-btn:hover{border-color:#fff;color:#fff;background:#ffffff11;}
+
+/* 地圖容器 */
+#game-container{position:relative;width:600px;height:520px;margin:0 auto;border-radius:12px;border:1px solid #ffffff08;background-color:#05080a;background-image:linear-gradient(rgba(85,230,224,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(85,230,224,0.03) 1px,transparent 1px);background-size:30px 30px;overflow:hidden}
+#map-wrapper{position:absolute;inset:0}
+svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+
+/* 一般節點 */
+.node{position:absolute;width:32px;height:32px;transform:translate(-50%,-50%);border-radius:50%;background:#101f2c;border:2px solid #2a4557;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#557a8f;z-index:2;user-select:none;box-shadow:inset 0 0 8px #000; transition: transform 0.1s;}
+.node.wall{background:transparent;border:none;box-shadow:none;pointer-events:none;width:10px;height:10px;}
+.node.wall::after{content:'';position:absolute;width:4px;height:4px;background:var(--wall);border-radius:50%;box-shadow:0 0 4px #000}
+.node.visited{background:#12272b;border-color:#2f7d7d;color:var(--cyan);box-shadow:inset 0 0 10px #174b4b}
+.node.start{background:var(--cyan);border-color:#b8fffb;color:#07171b;box-shadow:0 0 15px #55e6e0aa}
+.node.clickable{background:#0c2433;border-color:var(--cyan);color:#d7f7ff;cursor:pointer;animation:pulse 1.5s infinite}
+.node.clickable:hover{background:#123b52;box-shadow:0 0 15px var(--cyan); transform:translate(-50%,-50%) scale(1.1);}
+
+/* 實體節點 (EVE 風格) */
+.ent-node { position: absolute; width: 64px; height: 64px; transform: translate(-50%,-50%); z-index: 3; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.2s;}
+.ent-node:hover { transform: translate(-50%,-50%) scale(1.1); }
+.ent-node.defeated, .ent-node.picked { cursor: default; opacity: 0.4; filter: grayscale(1); pointer-events:none;}
+
+/* 六角形外框 */
+.ent-frame { position: absolute; inset: 0; clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); background: #000; z-index: -1;}
+.ent-frame::before { content:''; position:absolute; inset:2px; clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); background: #0d141a; z-index: -1;}
+.ent-frame::after { content:''; position:absolute; inset:0; clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); border: 2px solid currentColor; opacity: 0.5;}
+
+.ent-content { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 4px; }
+.ent-top { font-size: 11px; font-family: monospace; color: #fff; display: flex; align-items: center; gap: 2px; }
+.ent-icon { font-size: 22px; line-height: 1; margin: 2px 0; color: currentColor; filter: drop-shadow(0 0 3px currentColor); }
+.ent-bot { font-size: 11px; font-family: monospace; color: #fff; display: flex; align-items: center; gap: 2px; }
+.ent-name { position: absolute; bottom: -22px; font-size: 11px; white-space: nowrap; color: currentColor; font-family: monospace; letter-spacing: 1px; font-weight:bold; text-shadow: 0 0 4px #000;}
+
+.ent-node.trap_tz { color: var(--trap_tz); }
+.ent-node.trap_vi { color: var(--trap_vi); }
+.ent-node.trap_sq { color: var(--trap_sq); }
+.ent-node.wrench { color: var(--wrench); }
+.ent-node.cracker { color: var(--cracker); }
+.ent-node.core { color: var(--core); width:72px; height:72px; }
+.ent-node.core .ent-icon { font-size: 28px; }
+
+body.targeting .ent-node.trap_tz, body.targeting .ent-node.trap_vi, body.targeting .ent-node.trap_sq, body.targeting .ent-node.core {
+  animation: targetGlow 0.8s infinite alternate;
+}
+
+@keyframes pulse{0%{box-shadow:0 0 0 0 #55e6e066}70%{box-shadow:0 0 0 10px #55e6e000}100%{box-shadow:0 0 0 0 #55e6e000}}
+@keyframes targetGlow{from{filter:drop-shadow(0 0 2px var(--hp))}to{filter:drop-shadow(0 0 12px var(--hp))}}
+
+line{stroke-width:2;stroke-linecap:round;transition:all .3s}
+line.dash{stroke:#1b2e3c;stroke-dasharray:4 4}
+line.path{stroke:#2f7d7d}
+line.active{stroke:var(--cyan);stroke-width:3;filter:drop-shadow(0 0 4px var(--cyan))}
+
+.log-box{width:600px;height:80px;margin-top:16px;background:#0d141a;border:1px solid #1b2e3c;border-radius:8px;padding:8px 12px;font-size:13px;color:#8ca9b9;overflow-y:auto;font-family:monospace;line-height:1.5}
+.log-box p{margin:0 0 4px 0}
+.log-dmg{color:var(--hp)}
+.log-info{color:var(--cyan)}
+.log-heal{color:var(--trap_vi)}
+.log-debuff{color:var(--trap_sq)}
+.log-heal-player{color:var(--heal)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Relic Analyzer <span style="font-size:14px;color:#6e8b9e;vertical-align:middle;">v9.4</span></h1>
+  <p class="sub">純淨版：移除 SVG，採用幾何符號與 Emoji。</p>
+  
+  <section class="panel" id="main-panel">
+    <div class="top-bar">
+      <div class="player-stats">
+        <div class="stat-row">
+          <span class="hp-text">HP</span>
+          <div class="bar-bg"><div class="bar-fill" id="hp-bar" style="width:100%"></div></div>
+          <span id="hp-val" style="color:var(--hp)">80</span>
+        </div>
+        <div class="stat-row">
+          <span class="atk-text">ATK</span>
+          <span id="atk-val" style="color:var(--gold)">40</span>
+        </div>
+      </div>
+      
+      <div class="tactical-items">
+        <button class="btn item-btn" id="btn-wrench" disabled>
+          🔧 扳手 (<span id="cnt-wrench">0</span>)
+        </button>
+        <button class="btn item-btn" id="btn-cracker" disabled>
+          🔑 破解器 (<span id="cnt-cracker">0</span>)
+        </button>
+      </div>
+      
+      <div class="system-info">
+        <div class="status" id="status">等待接入</div>
+        <button class="reset-btn" id="reset">RESET SYSTEM</button>
+      </div>
+    </div>
+    
+    <div id="game-container">
+      <div id="map-wrapper"><svg id="connections"></svg></div>
+    </div>
+    
+    <div class="log-box" id="log">
+      <p>系統已就緒。請探索未知節點。</p>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const R = 4, SIZE = 34, WALL_RATIO = 0.3, CX = 300, CY = 260;
+  const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+  const MAX_HP = 80, BASE_ATK = 40;
+  
+  // 改用純文字/符號，絕對不會有 SVG 溢出問題
+  const ICONS = {
+    trap_tz: '▲',
+    trap_vi: '☣',
+    trap_sq: '■',
+    wrench: '🔧',
+    cracker: '🔑',
+    core: '◎'
+  };
+
+  const ENTS = {
+    trap_tz: { name: 'Trapezoid', hp: 60, atk: 20 },
+    trap_vi: { name: 'Virus', hp: 80, atk: 10 },
+    trap_sq: { name: 'Square', hp: 80, atk: 20 },
+    core:    { name: 'SysCore', hp: 50, atk: 10 },
+    wrench:  { name: 'Wrench', hp: 0, atk: 0 },
+    cracker: { name: 'Cracker', hp: 0, atk: 0 }
+  };
+
+  const wrapper = document.getElementById('map-wrapper');
+  const svgEl = document.getElementById('connections');
+  const statusEl = document.getElementById('status');
+  const hpEl = document.getElementById('hp-val');
+  const hpBar = document.getElementById('hp-bar');
+  const atkEl = document.getElementById('atk-val');
+  const logEl = document.getElementById('log');
+  const panel = document.getElementById('main-panel');
+
+  const btnWrench = document.getElementById('btn-wrench');
+  const cntWrench = document.getElementById('cnt-wrench');
+  const btnCracker = document.getElementById('btn-cracker');
+  const cntCracker = document.getElementById('cnt-cracker');
+
+  let nodes = new Map(), startId, endId, state;
+  let player = { hp: MAX_HP, atk: BASE_ATK, wrenches: 0, crackers: 0, wrenchTurns: 0, targeting: false };
+  let visited = new Set();
+
+  const getPos = (q, r) => ({ x: SIZE * Math.sqrt(3) * (q + r / 2) + CX, y: SIZE * 1.5 * r + CY });
+  const getNbs = (q, r) => DIRS.map(([dq, dr]) => `${q + dq},${r + dr}`);
+  const hexDist = (q1, r1, q2, r2) => Math.max(Math.abs(q1 - q2), Math.abs(r1 - r2), Math.abs(q1 + r1 - q2 - r2));
+
+  function log(msg, cls = '') {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = msg;
+    logEl.appendChild(p);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function initGrid() {
+    nodes.clear();
+    for (let q = -R; q <= R; q++) {
+      for (let r = Math.max(-R, -q - R); r <= Math.min(R, -q + R); r++) {
+        const id = `${q},${r}`, p = getPos(q, r);
+        nodes.set(id, { id, q, r, x: p.x, y: p.y, isWall: false, dist: Infinity, ent: null });
+      }
+    }
+  }
+
+  function getDistance(targetId) {
+    const targets = [endId];
+    for (const n of nodes.values()) {
+      if (n.ent && !n.ent.defeated && !n.ent.pickedUp) targets.push(n.id);
+    }
+    const dists = new Map(targets.map(id => [id, 0]));
+    const q = targets.map(id => nodes.get(id));
+    
+    for (let head = 0; head < q.length; head++) {
+      const curr = q[head];
+      if (curr.id === targetId) return dists.get(curr.id);
+      for (const nid of getNbs(curr.q, curr.r)) {
+        const nb = nodes.get(nid);
+        if (nb && !nb.isWall && !dists.has(nid)) {
+          dists.set(nid, dists.get(curr.id) + 1);
+          q.push(nb);
+        }
+      }
+    }
+    return Infinity;
+  }
+
+  function generateMap() {
+    for (let attempt = 0; attempt < 5000; attempt++) {
+      initGrid();
+      const arr = Array.from(nodes.values());
+      const edges = arr.filter(n => Math.abs(n.q) === R || Math.abs(n.r) === R || Math.abs(n.q + n.r) === R);
+      
+      const s = edges[Math.floor(Math.random() * edges.length)];
+      const e = arr.find(n => n.q === -s.q && n.r === -s.r);
+      if (!e) continue;
+
+      const entTypes = ['trap_tz', 'trap_vi', 'trap_sq', 'wrench', 'cracker'];
+      const selected = [];
+      const candidates = arr.filter(n => n !== s && n !== e).sort(() => Math.random() - 0.5);
+      
+      for (const c of candidates) {
+        if (selected.length >= 5) break;
+        if (selected.every(em => hexDist(c.q, c.r, em.q, em.r) >= 2) && hexDist(c.q, c.r, e.q, e.r) >= 2) {
+          selected.push(c);
+        }
+      }
+      if (selected.length < 5) {
+        for (const c of candidates) {
+          if (selected.length >= 5) break;
+          if (!selected.includes(c)) selected.push(c);
+        }
+      }
+      if (selected.length < 5) continue;
+
+      selected.forEach((node, i) => {
+        const type = entTypes[i];
+        const conf = ENTS[type];
+        node.ent = { type, hp: conf.hp, maxHp: conf.hp, atk: conf.atk, revealed: false, defeated: false, pickedUp: false };
+      });
+      e.ent = { type: 'core', hp: ENTS.core.hp, maxHp: ENTS.core.hp, atk: ENTS.core.atk, revealed: false, defeated: false, pickedUp: false };
+
+      arr.forEach(n => n.isWall = !(n === s || n === e || selected.includes(n)) && Math.random() < WALL_RATIO);
+
+      const sNbs = getNbs(s.q, s.r).map(id => nodes.get(id)).filter(n => n);
+      if (sNbs.every(n => n.isWall)) continue;
+
+      const check = new Set([e.id]), q = [e];
+      for (let i = 0; i < q.length; i++) {
+        for (const nid of getNbs(q[i].q, q[i].r)) {
+          const nb = nodes.get(nid);
+          if (nb && !nb.isWall && !check.has(nid)) { check.add(nid); q.push(nb); }
+        }
+      }
+      if (check.has(s.id)) return { s, e };
+    }
+    return null;
+  }
+
+  function reset() {
+    const gen = generateMap();
+    if (!gen) {
+      log('地圖生成失敗，請重新整理網頁。', 'log-dmg');
+      return;
+    }
+    
+    startId = gen.s.id; endId = gen.e.id;
+    visited = new Set([startId]);
+    player = { hp: MAX_HP, atk: BASE_ATK, wrenches: 0, crackers: 0, wrenchTurns: 0, targeting: false };
+    state = 'playing';
+    
+    nodes.get(startId).dist = getDistance(startId);
+    logEl.innerHTML = '<p>系統已就緒。請探索未知節點。</p>';
+    document.body.classList.remove('targeting');
+    render();
+  }
+
+  function getClickable() {
+    if (state !== 'playing') return new Set();
+    const set = new Set();
+    for (const vid of visited) {
+      const v = nodes.get(vid);
+      for (const nid of getNbs(v.q, v.r)) {
+        const nb = nodes.get(nid);
+        if (!nb || nb.isWall) continue;
+        if (!visited.has(nid)) set.add(nid);
+        else if (nb.ent && !nb.ent.defeated && !nb.ent.pickedUp && nb.ent.revealed) set.add(nid);
+      }
+    }
+    return set;
+  }
+
+  function updatePlayerAtk() {
+    const activeSquares = Array.from(nodes.values()).filter(n => n.ent && n.ent.type === 'trap_sq' && n.ent.revealed && !n.ent.defeated);
+    const oldAtk = player.atk;
+    player.atk = Math.max(10, Math.floor(BASE_ATK / Math.pow(2, activeSquares.length)));
+    
+    if (oldAtk !== player.atk) {
+      if (player.atk < oldAtk) {
+        log(`【方形陷阱】干擾系統！攻擊力降至 ${player.atk}。`, 'log-debuff');
+      } else {
+        log(`【方形陷阱】威脅解除，攻擊力恢復至 ${player.atk}。`, 'log-heal-player');
+      }
+    }
+  }
+
+  function processVirusPassives() {
+    const activeTraps = Array.from(nodes.values()).filter(n => n.ent && n.ent.revealed && !n.ent.defeated && n.ent.type.startsWith('trap_'));
+    const viruses = activeTraps.filter(n => n.ent.type === 'trap_vi');
+    
+    viruses.forEach(virusNode => {
+      const others = activeTraps.filter(n => n.id !== virusNode.id);
+      if (others.length > 0) {
+        const target = others[Math.floor(Math.random() * others.length)];
+        target.ent.hp += 10;
+        log(`【病毒陷阱】感染了另一陷阱，使其恢復 10 HP。`, 'log-heal');
+      }
+    });
+  }
+
+  function endTurn() {
+    if (state !== 'playing') return;
+    
+    if (player.wrenchTurns > 0) {
+      const heal = Math.floor(Math.random() * 6) + 5;
+      player.hp = Math.min(MAX_HP, player.hp + heal);
+      log(`【扳手】持續修復，恢復 ${heal} HP。`, 'log-heal-player');
+      player.wrenchTurns--;
+    }
+
+    updatePlayerAtk();
+    processVirusPassives();
+
+    if (player.hp <= 0) {
+      player.hp = 0;
+      state = 'lost';
+      log('系統崩潰！你已死亡。', 'log-dmg');
+    }
+  }
+
+  function clickNode(id) {
+    const isTargeting = player.targeting;
+    
+    if (isTargeting) {
+      const n = nodes.get(id);
+      if (n && n.ent && n.ent.revealed && !n.ent.defeated && (n.ent.type.startsWith('trap_') || n.ent.type === 'core')) {
+        const halfHp = Math.floor(n.ent.hp / 2);
+        n.ent.hp -= halfHp;
+        log(`【破解器】生效！對 ${ENTS[n.ent.type].name} 造成 ${halfHp} 點真實傷害。`, 'log-info');
+        
+        player.targeting = false;
+        document.body.classList.remove('targeting');
+        
+        if (n.ent.hp <= 0) {
+          n.ent.hp = 0;
+          n.ent.defeated = true;
+          visited.add(id);
+          if (n.ent.type === 'core') state = 'won';
+          else log(`擊敗了【${ENTS[n.ent.type].name}】！`, 'log-info');
+        }
+        endTurn();
+      } else {
+        log('取消使用破解器。', 'log-info');
+        player.targeting = false;
+        document.body.classList.remove('targeting');
+        player.crackers++;
+      }
+      render();
+      return;
+    }
+
+    if (!getClickable().has(id)) return;
+    const node = nodes.get(id);
+    
+    if (node.ent) {
+      if (!node.ent.revealed) {
+        node.ent.revealed = true;
+        log(`揭露了【${ENTS[node.ent.type].name}】！`, 'log-info');
+        if (node.ent.type === 'trap_sq') updatePlayerAtk();
+        else if (node.ent.type === 'core') log(`警告：系統核心具備反擊能力，準備戰鬥！`, 'log-dmg');
+      } else if (!node.ent.defeated && !node.ent.pickedUp) {
+        if (node.ent.type === 'wrench') {
+          node.ent.pickedUp = true; visited.add(id);
+          player.wrenches++; log(`拾取了【扳手】。`, 'log-info');
+          node.dist = getDistance(id); 
+          // 拾取不消耗回合
+        } else if (node.ent.type === 'cracker') {
+          node.ent.pickedUp = true; visited.add(id);
+          player.crackers++; log(`拾取了【破解器】。`, 'log-info');
+          node.dist = getDistance(id); 
+          // 拾取不消耗回合
+        } else {
+          const dmg = player.atk;
+          node.ent.hp -= dmg;
+          log(`對【${ENTS[node.ent.type].name}】造成 ${dmg} 傷害。`, 'log-info');
+          
+          if (node.ent.hp <= 0) {
+            node.ent.hp = 0;
+            node.ent.defeated = true;
+            visited.add(id);
+            if (node.ent.type === 'core') state = 'won';
+            else log(`擊敗了【${ENTS[node.ent.type].name}】！`, 'log-info');
+            node.dist = getDistance(id);
+          } else {
+            player.hp -= node.ent.atk;
+            log(`受到反擊，損失 ${node.ent.atk} HP。`, 'log-dmg');
+          }
+          endTurn();
+        }
+      }
+    } else {
+      visited.add(id);
+      node.dist = getDistance(id);
+      endTurn();
+    }
+    
+    render();
+  }
+
+  document.getElementById('game-container').addEventListener('click', (e) => {
+    if (player.targeting && e.target.id === 'game-container') {
+      player.targeting = false;
+      document.body.classList.remove('targeting');
+      player.crackers++;
+      log('取消使用破解器。', 'log-info');
+      render();
+    }
+  });
+
+  btnWrench.onclick = () => {
+    if (state !== 'playing' || player.wrenches <= 0) return;
+    player.wrenches--;
+    player.wrenchTurns += 3;
+    log(`使用【扳手】，接下來 3 步將持續恢復生命。`, 'log-heal-player');
+    render();
+  };
+
+  btnCracker.onclick = () => {
+    if (state !== 'playing' || player.crackers <= 0 || player.targeting) return;
+    player.crackers--;
+    player.targeting = true;
+    document.body.classList.add('targeting');
+    log(`【破解器】已啟用，請點擊一個已揭露的陷阱（或點擊空白處取消）。`, 'log-info');
+    render();
+  };
+
+  function render() {
+    wrapper.querySelectorAll('.node, .ent-node').forEach(el => el.remove());
+    svgEl.innerHTML = '';
+    const clickable = getClickable();
+    const drawn = new Set();
+    
+    hpEl.textContent = player.hp;
+    hpBar.style.width = Math.max(0, (player.hp / MAX_HP * 100)) + '%';
+    atkEl.textContent = player.atk;
+    cntWrench.textContent = player.wrenches;
+    cntCracker.textContent = player.crackers;
+    
+    btnWrench.disabled = (player.wrenches <= 0 || state !== 'playing');
+    if (player.wrenches > 0) btnWrench.classList.add('avail-wrench');
+    else btnWrench.classList.remove('avail-wrench');
+
+    btnCracker.disabled = (player.crackers <= 0 || state !== 'playing');
+    if (player.crackers > 0 && !player.targeting) btnCracker.classList.add('avail-cracker');
+    else btnCracker.classList.remove('avail-cracker');
+    
+    if (player.targeting) panel.style.borderColor = 'var(--hp)';
+    else panel.style.borderColor = '#1b2e3c';
+
+    statusEl.textContent = state === 'won' ? '核心已摧毀！' : (state === 'lost' ? '系統崩潰' : `已擴展：${visited.size}`);
+
+    for (const vid of visited) {
+      const v = nodes.get(vid);
+      for (const nid of getNbs(v.q, v.r)) {
+        const nb = nodes.get(nid);
+        if (!nb || nb.isWall) continue;
+        
+        const isVisited = visited.has(nid);
+        const isClickable = clickable.has(nid);
+        const lineId = [vid, nid].sort().join('|');
+
+        if ((isVisited || isClickable) && !drawn.has(lineId)) {
+          drawn.add(lineId);
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', v.x); line.setAttribute('y1', v.y);
+          line.setAttribute('x2', nb.x); line.setAttribute('y2', nb.y);
+          if (isVisited) line.setAttribute('class', (vid === startId || nid === startId) ? 'active' : 'path');
+          else line.setAttribute('class', 'dash');
+          svgEl.appendChild(line);
+        }
+      }
+    }
+
+    for (const node of nodes.values()) {
+      if (node.ent && node.ent.revealed) {
+        const t = node.ent;
+        const el = document.createElement('div');
+        el.className = `ent-node ${t.type}`;
+        el.style.left = node.x + 'px';
+        el.style.top = node.y + 'px';
+        
+        if (t.defeated || t.pickedUp) el.classList.add(t.defeated ? 'defeated' : 'picked');
+        
+        const topHtml = (t.type === 'wrench' || t.type === 'cracker') ? '' : `<div class="ent-top">✱ <span>${t.hp}</span></div>`;
+        const botHtml = (t.type === 'wrench' || t.type === 'cracker') ? '' : `<div class="ent-bot">⚡ <span>${t.atk}</span></div>`;
+        
+        el.innerHTML = `
+          <div class="ent-frame"></div>
+          <div class="ent-content">
+            ${topHtml}
+            <div class="ent-icon">${ICONS[t.type]}</div>
+            ${botHtml}
+            <div class="ent-name">${ENTS[t.type].name}</div>
+          </div>
+        `;
+        
+        if (clickable.has(node.id) && (!t.defeated && !t.pickedUp)) {
+          el.onclick = (e) => { e.stopPropagation(); clickNode(node.id); };
+        }
+        wrapper.appendChild(el);
+      } else {
+        const el = document.createElement('div');
+        el.className = 'node';
+        el.style.left = node.x + 'px';
+        el.style.top = node.y + 'px';
+
+        if (node.isWall) {
+          el.classList.add('wall');
+        } else if (node.id === startId) {
+          el.classList.add('start'); el.textContent = 'S';
+        } else if (visited.has(node.id)) {
+          el.classList.add('visited');
+          const d = node.dist;
+          el.textContent = node.id === startId ? 'S' : (d === Infinity ? 'X' : (d > 5 ? '5+' : d));
+        } else if (clickable.has(node.id)) {
+          el.classList.add('clickable');
+          el.onclick = (e) => { e.stopPropagation(); clickNode(node.id); };
+        } else {
+          el.style.opacity = '0.3'; 
+          el.style.background = 'transparent';
+          el.style.borderColor = '#1b2e3c';
+        }
+        wrapper.appendChild(el);
+      }
+    }
+  }
+
+  document.getElementById('reset').onclick = reset;
+  reset();
+})();
+</script>
+</body>
+</html>
